@@ -1,4 +1,4 @@
-# Unsupervised Learning Assignment - Giovanni Peralto
+# Markov Decision Processes Assignment - Giovanni Peralto
 Code was written in Python 3.x. Python/pip is needed to run the program.
 
 ### Instructions:
