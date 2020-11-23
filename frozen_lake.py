@@ -33,36 +33,55 @@ def decay(arg, n_states, min_arg):
     decayed_eps = arg - decay_rate
     return decayed_eps if decayed_eps >= min_arg else min_arg
 
+def create_policy(Q):
+    outputs = { 0: '<', 1: 'v', 2: '>', 3: '^' }
+    mapped_actions = []
+    inputs = np.argmax(Q, axis=1)
+
+    for i in inputs:
+        mapped_actions.append(outputs[i])
+
+    return mapped_actions
+
+def print_policy(actions, Q):
+    c, s, rows = 0, '', int(Q.shape[0] ** 0.5)
+
+    for x in range(rows):
+        
+        s += '\n'
+
+        for y in range(rows):
+            s += '| {} '.format(actions[c])
+            c += 1
+        s += '|'
+
+    s += '\n'
+
+    return s
+
 def policy_evaluation(policy, environment, discount_factor=1.0, theta=1e-9, max_iterations=1e9):
-    # Number of evaluation iterations
     evaluation_iterations = 1
-    # Initialize a value function for each state as zero
-    V = np.zeros(environment.nS)
-    # Repeat until change in value is below the threshold
+    n_states, n_actions = environment.observation_space.n, environment.action_space.n
+    V, deltas = np.zeros(n_states), []
     for i in range(int(max_iterations)):
-        # Initialize a change of value function as zero
         delta = 0
-        # Iterate though each state
-        for state in range(environment.nS):
-            # Initial a new value of current state
+
+        for state in range(n_states):
             v = 0
-            # Try all possible actions which can be taken from this state
+
             for action, action_probability in enumerate(policy[state]):
-                # Check how good next state will be
                 for state_probability, next_state, reward, terminated in environment.P[state][action]:
-                    # Calculate the expected value
                     v += action_probability * state_probability * (reward + discount_factor * V[next_state])
         
-            # Calculate the absolute change of value function
             delta = max(delta, np.abs(V[state] - v))
-            # Update value function
             V[state] = v
+        
+        deltas.append(delta)
         evaluation_iterations += 1
         
-        # Terminate if value change is insignificant
         if delta < theta:
             print(f'Policy evaluated in {evaluation_iterations} iterations.')
-            return V
+            return V, deltas
 
 def one_step_lookahead(environment, state, V, discount_factor):
     action_values = np.zeros(environment.nA)
@@ -72,67 +91,54 @@ def one_step_lookahead(environment, state, V, discount_factor):
     return action_values
 
 def policy_iteration(environment, discount_factor=1.0, max_iterations=1e9):
-    # Start with a random policy
-    #num states x num actions / num actions
-    policy = np.ones([environment.nS, environment.nA]) / environment.nA
-    # Initialize counter of evaluated policies
+    n_states, n_actions = environment.observation_space.n, environment.action_space.n
+    policy = np.ones([n_states, n_actions]) / n_actions
     evaluated_policies = 1
-    # Repeat until convergence or critical number of iterations reached
+
     for i in range(int(max_iterations)):
         stable_policy = True
-        # Evaluate current policy
-        V = policy_evaluation(policy, environment, discount_factor=discount_factor)
-        # Go through each state and try to improve actions that were taken (policy Improvement)
-        for state in range(environment.nS):
-                # Choose the best action in a current state under current policy
+        V, deltas = policy_evaluation(policy, environment, discount_factor=discount_factor)
+
+        for state in range(n_states):
             current_action = np.argmax(policy[state])
-            # Look one step ahead and evaluate if current action is optimal
-            # We will try every possible action in a current state
             action_value = one_step_lookahead(environment, state, V, discount_factor)
-            # Select a better action
             best_action = np.argmax(action_value)
-            # If action didn't change
+
             if current_action != best_action:
                 stable_policy = True
-                # Greedy policy update
-                policy[state] = np.eye(environment.nA)[best_action]
+                policy[state] = np.eye(n_actions)[best_action]
         evaluated_policies += 1
-        # If the algorithm converged and policy is not changing anymore, then return final policy and value function
+
         if stable_policy:
             print(f'Evaluated {evaluated_policies} policies.')
-            return policy
+            return policy, deltas
 
 def value_iteration(environment, discount_factor=1.0, theta=1e-9, max_iterations=1e9):
-    # Initialize state-value function with zeros for each environment state
-    V = np.zeros(environment.nS)
+    n_states, n_actions = environment.observation_space.n, environment.action_space.n
+    V, deltas = np.zeros(n_states), []
+
     for i in range(int(max_iterations)):
-        # Early stopping condition
         delta = 0
-        # Update each state
-        for state in range(environment.nS):
-            # Do a one-step lookahead to calculate state-action values
+
+        for state in range(n_states):
             action_value = one_step_lookahead(environment, state, V, discount_factor)
-            # Select best action to perform based on the highest state-action value
             best_action_value = np.max(action_value)
-            # Calculate change in value
             delta = max(delta, np.abs(V[state] - best_action_value))
-            # Update the value function for current state
             V[state] = best_action_value
-            # Check if we can stop
+        
+        deltas.append(delta)
+
         if delta < theta:
             print(f'Value Iteration converged in {i} iterations.')
             break
 
-    # Create a deterministic policy using the optimal value function
-    policy = np.zeros([environment.nS, environment.nA])
-    for state in range(environment.nS):
-        # One step lookahead to find the best action for this state
+    policy = np.zeros([n_states, n_actions])
+    for state in range(n_states):
         action_value = one_step_lookahead(environment, state, V, discount_factor)
-        # Select best action based on the highest state-action value
         best_action = np.argmax(action_value)
-        # Update the policy to perform a better action at a current state
         policy[state, best_action] = 1.0
-    return policy
+
+    return policy, deltas
 
 def q_learning(environment, gamma=0.95, alpha=0.1, epsilon=1.0, theta=0.0001, seed=93, policy=None, render=False):
         """
@@ -146,7 +152,7 @@ def q_learning(environment, gamma=0.95, alpha=0.1, epsilon=1.0, theta=0.0001, se
         np.random.seed(seed)
         environment.seed(seed)
 
-        decay_min, delta, theta_chain = 0.001, 0, 0
+        decay_min, delta, deltas = 0.001, 0, []
         n_states, n_actions = environment.observation_space.n, environment.action_space.n
         Q, max_iters = np.zeros((n_states, n_actions)), n_states * 1000
         
@@ -165,7 +171,8 @@ def q_learning(environment, gamma=0.95, alpha=0.1, epsilon=1.0, theta=0.0001, se
                 Q[s, a] += alpha * td_delta
                 delta = abs(td_delta)
                 s = s_
-
+                
+            deltas.append(delta)
             # Eps decay
             epsilon = decay(epsilon, n_states, decay_min)
 
@@ -173,16 +180,14 @@ def q_learning(environment, gamma=0.95, alpha=0.1, epsilon=1.0, theta=0.0001, se
                 print(f'Q-Learning converged in {i} iterations.')
                 break
         
-        # average_reward = total_reward / n_iter
-        return Q
+        return Q, deltas
 
-def plot_rewards(data, rewards, n_episodes):
-    y = rewards/np.arange(1, n_episodes+1, 1)
-    plt.plot(np.arange(1, n_episodes+1, 1), y)
-    plt.xlabel(data['x'])
-    plt.ylabel(data['y'])
-    plt.title(data['title'])
-    plt.save('images/{}'.format(data['name']))
+def plot_data(info, data, n_episodes):
+    plt.plot(np.arange(1, n_episodes+1, 1), data)
+    plt.xlabel(info['x'])
+    plt.ylabel(info['y'])
+    plt.savefig('images/{}'.format(info['name']))
+    plt.close()
 
 def play_episodes(environment, n_episodes, policy):
     wins = 0
@@ -236,7 +241,19 @@ if __name__ == "__main__":
             # Load a Frozen Lake environment
             environment = gym.make('FrozenLake-v0', desc=value)
             # Search for an optimal policy using policy iteration
-            policy = iteration_func(environment)
+            policy, deltas = iteration_func(environment)
+            plot_data(
+                {
+                    'x': 'Iterations',
+                    'y': 'Δ',
+                    'name': 'Deltas - {} - {}'.format(key, iteration_name)
+                },
+                deltas,
+                len(deltas)
+            )
+            actions = create_policy(policy)
+            # Print out policy
+            print(print_policy(actions, policy))
             # Apply best policy to the real environment
             wins, total_reward, average_reward = play_episodes(environment, n_episodes, policy)
             print(f'{key} {iteration_name} :: number of wins over {n_episodes} episodes = {wins}')
