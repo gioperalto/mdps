@@ -1,6 +1,5 @@
 import gym
 import numpy as np
-from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 def epsilon_greedy(Q, epsilon, state):
@@ -141,11 +140,6 @@ def value_iteration(environment, discount_factor=1.0, theta=1e-9, max_iterations
     return policy, deltas
 
 def q_learning(environment, gamma=0.95, alpha=0.1, epsilon=1.0, theta=0.0001, seed=93, policy=None, render=False):
-        """
-        @param policy strategy for choosing actions
-        @param render whether to display UI
-        @param verbose additional logging 
-        """
         if policy is None:
             policy = epsilon_greedy
 
@@ -192,21 +186,20 @@ def plot_data(info, data, n_episodes):
 def play_episodes(environment, n_episodes, policy):
     wins = 0
     total_reward = 0
+    
     for episode in range(n_episodes):
         terminated = False
         state = environment.reset()
+        
         while not terminated:
-            # Select best action to perform in a current state
             action = np.argmax(policy[state])
-            # Perform an action an observe how environment acted in response
             next_state, reward, terminated, info = environment.step(action)
-            # Summarize total reward
             total_reward += reward
-            # Update current state
             state = next_state
-            # Calculate number of wins over episodes
+
             if terminated and reward == 1.0:
                 wins += 1
+
     average_reward = total_reward / n_episodes
     return wins, total_reward, average_reward
 
@@ -231,17 +224,17 @@ if __name__ == "__main__":
     }
 
     for key, value in maps.items():
-        # Functions to find best policy
         solvers = [
             ('Policy Iteration', policy_iteration),
             ('Value Iteration', value_iteration),
             ('Q-Learning', q_learning),
         ]
+
         for iteration_name, iteration_func in solvers:
-            # Load a Frozen Lake environment
             environment = gym.make('FrozenLake-v0', desc=value)
-            # Search for an optimal policy using policy iteration
             policy, deltas = iteration_func(environment)
+
+            # Generate plots
             plot_data(
                 {
                     'x': 'Iterations',
@@ -251,10 +244,11 @@ if __name__ == "__main__":
                 deltas,
                 len(deltas)
             )
+
             actions = create_policy(policy)
-            # Print out policy
-            print(print_policy(actions, policy))
-            # Apply best policy to the real environment
             wins, total_reward, average_reward = play_episodes(environment, n_episodes, policy)
+
+            # Print policies, metrics
+            print(print_policy(actions, policy))
             print(f'{key} {iteration_name} :: number of wins over {n_episodes} episodes = {wins}')
             print(f'{key} {iteration_name} :: average reward over {n_episodes} episodes = {average_reward} \n\n')
